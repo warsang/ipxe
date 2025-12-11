@@ -1,0 +1,61 @@
+# Suggested CodeQL workflow tuned for ipxe
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+  schedule:
+    - cron: '23 6 * * 0'
+
+jobs:
+  codeql:
+    name: CodeQL - C/C++
+    runs-on: ubuntu-22.04
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        run: |
+          sudo chown $(id -un) /var/cache/apt/archives
+          sudo apt update
+          sudo apt install -y -o Acquire::Retries=50 \
+               mtools syslinux isolinux \
+               libc6-dev-i386 valgrind \
+               gcc-arm-none-eabi gcc-aarch64-linux-gnu \
+               build-essential
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+
+      # Run the ipxe builds that produce real object compilation commands.
+      # Keep these between init and analyze so CodeQL intercepts compiles.
+      - name: Build ipxe (host tests and common library)
+        run: |
+          # Build core library and many targets so analysis sees many TU's
+          make -C src -j$(nproc) bin/blib.a
+          # Build a broad selection of targets to capture platform-specific code
+          make -C src -j$(nproc) everything || echo "some targets might fail; continue"
+
+      # Optionally add cross-target builds you want CodeQL to analyze:
+      - name: Build ipxe (EFI/ARM/AArch64 cross targets)
+        run: |
+          # Only do these if cross toolchains are present; they increase coverage
+          make -C src -j$(nproc) CROSS=arm-none-eabi- bin-arm32-efi/intel.efi || true
+          make -C src -j$(nproc) CROSS=aarch64-linux-gnu- bin-arm64-efi/ipxe.efi || true
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:c-cpp"
