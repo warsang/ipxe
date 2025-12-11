@@ -1,4 +1,5 @@
-# Suggested CodeQL workflow tuned for ipxe
+name: CodeQL
+
 on:
   push:
     branches: [ "master" ]
@@ -18,6 +19,17 @@ jobs:
       contents: read
 
     steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker image prune --all --force
+          df -h
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -25,37 +37,32 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo chown $(id -un) /var/cache/apt/archives
-          sudo apt update
-          sudo apt install -y -o Acquire::Retries=50 \
+          sudo apt-get update
+          sudo apt-get install -y -o Acquire::Retries=50 \
                mtools syslinux isolinux \
-               libc6-dev-i386 valgrind \
-               gcc-arm-none-eabi gcc-aarch64-linux-gnu \
+               libc6-dev-i386 \
                build-essential
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+        uses: github/codeql-action/init@v3
         with:
           languages: c-cpp
           build-mode: manual
 
-      # Run the ipxe builds that produce real object compilation commands.
-      # Keep these between init and analyze so CodeQL intercepts compiles.
-      - name: Build ipxe (host tests and common library)
+      - name: Build iPXE (representative targets)
         run: |
-          # Build core library and many targets so analysis sees many TU's
-          make -C src -j$(nproc) bin/blib.a
-          # Build a broad selection of targets to capture platform-specific code
-          make -C src -j$(nproc) everything || echo "some targets might fail; continue"
-
-      # Optionally add cross-target builds you want CodeQL to analyze:
-      - name: Build ipxe (EFI/ARM/AArch64 cross targets)
-        run: |
-          # Only do these if cross toolchains are present; they increase coverage
-          make -C src -j$(nproc) CROSS=arm-none-eabi- bin-arm32-efi/intel.efi || true
-          make -C src -j$(nproc) CROSS=aarch64-linux-gnu- bin-arm64-efi/ipxe.efi || true
+          # Build key targets that exercise most code paths
+          # Avoid 'everything' - it exhausts disk space
+          make -C src -j$(nproc) \
+            bin/ipxe.iso \
+            bin/ipxe.usb \
+            bin/ipxe.lkrn \
+            bin/undionly.kpxe \
+            bin/ipxe.pxe \
+            bin-x86_64-efi/ipxe.efi \
+            bin-x86_64-pcbios/ipxe.hd
 
       - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v4
+        uses: github/codeql-action/analyze@v3
         with:
           category: "/language:c-cpp"
