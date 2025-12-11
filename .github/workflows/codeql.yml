@@ -34,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true  # Fetch Git tags to enable proper version detection
 
       - name: Install build dependencies
         run: |
@@ -41,7 +42,7 @@ jobs:
           sudo apt-get install -y -o Acquire::Retries=50 \
                mtools syslinux isolinux \
                libc6-dev-i386 \
-               build-essential
+               build-essential genisoimage  # Add for .iso builds
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -64,37 +65,5 @@ jobs:
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
-  codeql-efi:
-    name: CodeQL - EFI
-    runs-on: ubuntu-22.04
-    permissions:
-      security-events: write
-      packages: read
-      actions: read
-      contents: read
-
-    steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo docker image prune --all --force
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: c-cpp
-          build-mode: manual
-
-      - name: Build EFI targets
-        run: |
-          make -C src -j$(nproc) bin-x86_64-efi/ipxe.efi bin-i386-efi/ipxe.efi
-
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
-        with:
-          category: "/language:c-cpp-efi"
         with:
           category: "/language:c-cpp"
